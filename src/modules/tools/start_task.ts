@@ -33,9 +33,21 @@ export function registerOpencodeStartTask(server: McpServer) {
           .describe(
             "Model override as 'providerID/modelID', copied verbatim from opencode_list_agents output — never guess or construct the id from a model's display name. Overrides the agent's pre-assigned model for this task only. An unknown model is rejected with status 'unknown_model' and the list of available models",
           ),
+        tools: z
+          .record(z.boolean())
+          .optional()
+          .describe(
+            "Per-request tool allow/deny map, e.g. {\"write\": false, \"edit\": false, \"bash\": false}. This is the only way to restrict a delegated agent: an agent's own `permission` frontmatter is NOT applied by the server — every agent, including read-only reviewers, is reported with `*: allow` and can write files. Pass explicit denials for review-style tasks; list every tool to deny, wildcards are not honoured",
+          ),
+        variant: z
+          .string()
+          .optional()
+          .describe(
+            "Reasoning variant for this task, e.g. 'max'. Without it the model runs at its default reasoning level, which is a silent quality drop for review and analysis work — the server accepts the field, but it is never inferred from the model id",
+          ),
       },
     },
-    async ({ server_id, prompt, agent, model }) => {
+    async ({ server_id, prompt, agent, model, tools, variant }) => {
       const client = clientForServer(server_id);
       if (!client) {
         return jsonError({ server_id, status: "server_not_found" });
@@ -92,6 +104,8 @@ export function registerOpencodeStartTask(server: McpServer) {
             parts: [{ type: "text", text: prompt }],
             ...(agent ? { agent } : {}),
             ...(parsedModel ? { model: parsedModel } : {}),
+            ...(tools ? { tools } : {}),
+            ...(variant ? { variant } : {}),
           },
         });
 
