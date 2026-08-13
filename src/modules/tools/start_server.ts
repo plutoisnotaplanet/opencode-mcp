@@ -10,12 +10,34 @@ export function registerOpencodeStartServer(server: McpServer) {
   server.registerTool(
     "opencode_start_server",
     {
-      description: "Start a headless OpenCode server instance in the current working directory",
+      description:
+        "Start a headless OpenCode server instance in the current working directory, or attach to one that is already running by passing base_url",
       inputSchema: {
         port: z.number().optional().describe("Port to bind the server on (default 4096)"),
+        base_url: z
+          .string()
+          .optional()
+          .describe(
+            "URL of an OpenCode server that is already running, e.g. 'http://127.0.0.1:4096'. When given, no server is started and none is stopped on close: the caller owns its lifetime, and sessions survive this client. Without it the bridge starts its own server and kills it when the client goes away, taking every running session with it",
+          ),
       },
     },
-    async ({ port }) => {
+    async ({ port, base_url }) => {
+      // Attach: the caller already runs a server, so registering it is enough - the client in
+      // clientForServer only ever needs a base URL. close() is a no-op on purpose: killing a
+      // server we did not start would take down sessions belonging to somebody else.
+      if (base_url) {
+        const serverId = randomUUID();
+        registerServer({ serverId, baseUrl: base_url, close: () => {} });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ server_id: serverId, baseUrl: base_url, status: "attached" }),
+            },
+          ],
+        };
+      }
       try {
         // The server inherits this process' cwd, so its project worktree is the
         // directory the MCP host was launched in — no cwd argument needed.
