@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isAbsolute } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { jsonError, jsonResult } from "../shared/mcp-result.js";
@@ -45,9 +46,15 @@ export function registerOpencodeStartTask(server: McpServer) {
           .describe(
             "Reasoning variant for this task, e.g. 'max'. Without it the model runs at its default reasoning level, which is a silent quality drop for review and analysis work — the server accepts the field, but it is never inferred from the model id",
           ),
+        directory: z
+          .string()
+          .optional()
+          .describe(
+            "Absolute path of the working directory the task runs in; the agent's shell starts there. Must be an existing absolute path. When omitted, the task runs in the server process's own working directory (the directory the server was started in)",
+          ),
       },
     },
-    async ({ server_id, prompt, agent, model, tools, variant }) => {
+    async ({ server_id, prompt, agent, model, tools, variant, directory }) => {
       const client = clientForServer(server_id);
       if (!client) {
         return jsonError({ server_id, status: "server_not_found" });
@@ -63,6 +70,15 @@ export function registerOpencodeStartTask(server: McpServer) {
             message: "model must be in 'providerID/modelID' format",
           });
         }
+      }
+
+      if (directory !== undefined && !isAbsolute(directory)) {
+        return jsonError({
+          server_id,
+          status: "invalid_directory",
+          message:
+            "directory must be an absolute path; a relative path would run the task in the wrong working directory",
+        });
       }
 
       try {
@@ -90,7 +106,13 @@ export function registerOpencodeStartTask(server: McpServer) {
           }
         }
 
-        const created = await client.session.create({ body: { title: prompt.slice(0, 60) } });
+        // directory is a session-level property: it must go in the create request.
+        // The SDK maps `query` onto the URL, and the server reads it from there —
+        // the same field in the JSON body is ignored.
+        const created = await client.session.create({
+          body: { title: prompt.slice(0, 60) },
+          ...(directory !== undefined ? { query: { directory } } : {}),
+        });
         const sessionId = created.data?.id;
         if (!sessionId) {
           return jsonError({ server_id, status: "error", message: "failed to create session" });

@@ -30,7 +30,7 @@ See [Installation](#installation) for manual config, and from-source options.
 | `opencode_start_server`    | Start (or attach to) an OpenCode server instance                                                          |
 | `opencode_stop_server`     | Stop a running OpenCode server instance                                                                   |
 | `opencode_list_agents`     | List agents/models available on a server instance                                                         |
-| `opencode_start_task`      | Delegate a task to an agent by starting a new session and prompt (optional `agent` / `model` override)    |
+| `opencode_start_task`      | Delegate a task to an agent by starting a new session and prompt (optional `agent` / `model` / `variant` / `directory` overrides) |
 | `opencode_continue_task`   | Send a follow-up prompt to an existing task's session for iterative back-and-forth with the subagent      |
 | `opencode_cancel_task`     | Abort a running delegated task by cancelling its session                                                  |
 | `opencode_get_task_status` | Poll the status of a delegated task (`pending` / `running` / `completed` / `failed`); optional `include_progress` adds a partial output snippet and the currently running tool while it's still running |

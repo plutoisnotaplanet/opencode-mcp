@@ -291,6 +291,65 @@ describe("opencode_start_task", () => {
     vi.resetModules();
   });
 
+  it("returns invalid_directory for a relative directory path", async () => {
+    registerServer({ serverId: "srv-1", baseUrl: "http://127.0.0.1:4096", close: vi.fn() });
+    const fake = createFakeMcpServer();
+    registerOpencodeStartTask(fake.server);
+    const handler = fake.getHandler();
+
+    const result = await handler({
+      server_id: "srv-1",
+      prompt: "hi",
+      directory: "relative/path",
+    });
+
+    expect(result).toEqual({
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            server_id: "srv-1",
+            status: "invalid_directory",
+            message:
+              "directory must be an absolute path; a relative path would run the task in the wrong working directory",
+          }),
+        },
+      ],
+    });
+  });
+
+  it("passes directory as a query parameter when creating the session", async () => {
+    registerServer({ serverId: "srv-1", baseUrl: "http://127.0.0.1:4096", close: vi.fn() });
+    const create = vi.fn().mockResolvedValue({ data: { id: "session-1" } });
+    vi.doMock("@opencode-ai/sdk", () => ({
+      createOpencodeClient: () => ({
+        session: { create, promptAsync: vi.fn().mockResolvedValue({}) },
+      }),
+    }));
+    vi.resetModules();
+    const mod = await import("../../../src/modules/tools/start_task.js");
+    const registry = await import("../../../src/modules/shared/server-registry.js");
+    registry.killAllServers();
+    registry.registerServer({
+      serverId: "srv-1",
+      baseUrl: "http://127.0.0.1:4096",
+      close: vi.fn(),
+    });
+    const fake = createFakeMcpServer();
+    mod.registerOpencodeStartTask(fake.server);
+    const handler = fake.getHandler();
+
+    await handler({ server_id: "srv-1", prompt: "do the thing", directory: "/tmp/probe" });
+
+    expect(create).toHaveBeenCalledWith({
+      body: { title: "do the thing" },
+      query: { directory: "/tmp/probe" },
+    });
+    vi.doUnmock("@opencode-ai/sdk");
+    vi.resetModules();
+  });
+
   it("creates a session without optional agent or model fields", async () => {
     registerServer({ serverId: "srv-1", baseUrl: "http://127.0.0.1:4096", close: vi.fn() });
     const promptAsync = vi.fn().mockResolvedValue({});
