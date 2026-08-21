@@ -139,6 +139,7 @@ export function registerOpencodeStartTask(server: McpServer) {
           server_id,
           session_id: sessionId,
           status: "pending",
+          hint: "Task started in background. Do NOT block with long wait_for_task. Tell the user the task_id and poll via opencode_get_task_status or opencode_list_tasks (include_progress:true). For >30s work, spawn a Claude Task in background to poll until completed, then call opencode_get_task_result.",
         });
       } catch (error) {
         return jsonError({

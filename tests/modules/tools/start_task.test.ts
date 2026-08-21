@@ -184,6 +184,8 @@ describe("opencode_start_task", () => {
     expect(result).toMatchObject({
       content: [{ type: "text", text: expect.stringContaining('"status":"pending"') }],
     });
+    const parsedSkip = JSON.parse((result as { content: { text: string }[] }).content[0].text);
+    expect(parsedSkip.hint).toMatch(/Do NOT block/);
     vi.doUnmock("@opencode-ai/sdk");
     vi.resetModules();
   });
@@ -268,19 +270,14 @@ describe("opencode_start_task", () => {
       model: "anthropic/claude-sonnet-4",
     });
 
-    expect(result).toEqual({
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            task_id: "generated-task-id",
-            server_id: "srv-1",
-            session_id: "session-1",
-            status: "pending",
-          }),
-        },
-      ],
+    const parsedPending = JSON.parse((result as { content: { text: string }[] }).content[0].text);
+    expect(parsedPending).toMatchObject({
+      task_id: "generated-task-id",
+      server_id: "srv-1",
+      session_id: "session-1",
+      status: "pending",
     });
+    expect(parsedPending.hint).toMatch(/Do NOT block/);
     expect(tasks.getTask("generated-task-id")).toEqual({
       taskId: "generated-task-id",
       serverId: "srv-1",
