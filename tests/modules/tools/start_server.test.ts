@@ -105,4 +105,31 @@ describe("opencode_start_server", () => {
       ],
     });
   });
+
+  it("attaches to an existing server via base_url without starting a new one", async () => {
+    const fake = createFakeMcpServer();
+    registerOpencodeStartServer(fake.server);
+    const handler = fake.getHandler();
+
+    const result = await handler({ base_url: "http://127.0.0.1:9999" });
+
+    expect(createOpencodeServerMock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            server_id: "generated-uuid",
+            baseUrl: "http://127.0.0.1:9999",
+            status: "attached",
+          }),
+        },
+      ],
+    });
+    expect(getServer("generated-uuid")).toEqual({
+      serverId: "generated-uuid",
+      baseUrl: "http://127.0.0.1:9999",
+      close: expect.any(Function),
+    });
+  });
 });

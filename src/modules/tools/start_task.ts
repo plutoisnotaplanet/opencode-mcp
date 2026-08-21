@@ -38,7 +38,7 @@ export function registerOpencodeStartTask(server: McpServer) {
           .record(z.boolean())
           .optional()
           .describe(
-            "Per-request tool allow/deny map, e.g. {\"write\": false, \"edit\": false, \"bash\": false}. This is the only way to restrict a delegated agent: an agent's own `permission` frontmatter is NOT applied by the server — every agent, including read-only reviewers, is reported with `*: allow` and can write files. Pass explicit denials for review-style tasks; list every tool to deny, wildcards are not honoured",
+            'Per-request tool allow/deny map, e.g. {"write": false, "edit": false, "bash": false}. This is the only way to restrict a delegated agent: an agent\'s own `permission` frontmatter is NOT applied by the server — every agent, including read-only reviewers, is reported with `*: allow` and can write files. Pass explicit denials for review-style tasks; list every tool to deny, wildcards are not honoured',
           ),
         variant: z
           .string()

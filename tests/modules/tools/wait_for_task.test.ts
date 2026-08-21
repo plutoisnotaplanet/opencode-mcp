@@ -587,4 +587,184 @@ describe("opencode_wait_for_task", () => {
       },
     ]);
   });
+
+  it("returns cancelled when AbortSignal is already aborted", async () => {
+    const client = {};
+    clientForTaskMock.mockReturnValue({ client, sessionId: "s1" });
+    deriveTaskStatusMock.mockResolvedValue({ task_id: "task-1", status: "running" });
+    const fake = createFakeMcpServer();
+    registerOpencodeWaitForTask(fake.server);
+    const handler = fake.getHandler();
+
+    const controller = new AbortController();
+    controller.abort();
+    const extra = {
+      signal: controller.signal,
+      _meta: {},
+      sendNotification: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await handler({ task_ids: ["task-1"], mode: "all" }, extra as never);
+
+    const parsed = JSON.parse((result.content[0] as { type: string; text: string }).text);
+    expect(parsed.cancelled).toBe(true);
+    expect(parsed.timed_out).toBe(false);
+  });
+
+  it("sends progress notification when progressToken is provided", async () => {
+    vi.useFakeTimers();
+    const client = {};
+    clientForTaskMock.mockReturnValue({ client, sessionId: "s1" });
+    deriveTaskStatusMock.mockResolvedValue({ task_id: "task-1", status: "running" });
+    const fake = createFakeMcpServer();
+    registerOpencodeWaitForTask(fake.server);
+    const handler = fake.getHandler();
+
+    const sendNotification = vi.fn().mockResolvedValue(undefined);
+    const extra = {
+      signal: new AbortController().signal,
+      _meta: { progressToken: "tok-123" },
+      sendNotification,
+    };
+
+    const promise = handler(
+      {
+        task_ids: ["task-1"],
+        mode: "all",
+        timeout_ms: 2000,
+        poll_interval_ms: 500,
+      },
+      extra as never,
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await promise;
+
+    expect(sendNotification).toHaveBeenCalled();
+    const firstCall = sendNotification.mock.calls[0][0] as {
+      method: string;
+      params: Record<string, unknown>;
+    };
+    expect(firstCall.method).toBe("notifications/progress");
+    expect(firstCall.params.progressToken).toBe("tok-123");
+    const parsed = JSON.parse((result.content[0] as { type: string; text: string }).text);
+    expect(parsed.timed_out).toBe(true);
+  });
+
+  it("returns cancelled with progress when aborted and include_progress is true", async () => {
+    const client = {};
+    clientForTaskMock.mockReturnValue({ client, sessionId: "s1" });
+    deriveTaskStatusMock.mockImplementation(async (_c, _s, taskId, options) => {
+      if (options?.includeProgress) {
+        return {
+          task_id: taskId,
+          status: "running",
+          progress: { text_snippet: "hi", tool_calls_completed: 1 },
+        };
+      }
+      return { task_id: taskId, status: "running" };
+    });
+    const fake = createFakeMcpServer();
+    registerOpencodeWaitForTask(fake.server);
+    const handler = fake.getHandler();
+
+    const controller = new AbortController();
+    controller.abort();
+    const extra = {
+      signal: controller.signal,
+      _meta: {},
+      sendNotification: vi.fn(),
+    };
+
+    const result = await handler(
+      { task_ids: ["task-1"], mode: "all", include_progress: true },
+      extra as never,
+    );
+
+    const parsed = JSON.parse((result.content[0] as { type: string; text: string }).text);
+    expect(parsed.cancelled).toBe(true);
+    expect(parsed.tasks[0].progress).toBeDefined();
+  });
+
+  it("aborts during cancellable sleep via signal event", async () => {
+    vi.useFakeTimers();
+    const client = {};
+    clientForTaskMock.mockReturnValue({ client, sessionId: "s1" });
+    deriveTaskStatusMock.mockResolvedValue({ task_id: "task-1", status: "running" });
+    const fake = createFakeMcpServer();
+    registerOpencodeWaitForTask(fake.server);
+    const handler = fake.getHandler();
+
+    const controller = new AbortController();
+    const extra = {
+      signal: controller.signal,
+      _meta: {},
+      sendNotification: vi.fn(),
+    };
+
+    const promise = handler(
+      { task_ids: ["task-1"], mode: "all", timeout_ms: 5000, poll_interval_ms: 1000 },
+      extra as never,
+    );
+    // First poll happens instantly, then sleep 1000. Abort during sleep.
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await promise;
+
+    const parsed = JSON.parse((result.content[0] as { type: string; text: string }).text);
+    expect(parsed.cancelled).toBe(true);
+  });
+
+  it("does not send progress notification when all tasks already finished", async () => {
+    const client = {};
+    clientForTaskMock.mockReturnValue({ client, sessionId: "s1" });
+    deriveTaskStatusMock.mockResolvedValue({ task_id: "task-1", status: "completed" });
+    const fake = createFakeMcpServer();
+    registerOpencodeWaitForTask(fake.server);
+    const handler = fake.getHandler();
+
+    const sendNotification = vi.fn().mockResolvedValue(undefined);
+    const extra = {
+      signal: new AbortController().signal,
+      _meta: { progressToken: "tok-done" },
+      sendNotification,
+    };
+
+    const result = await handler({ task_ids: ["task-1"], mode: "all" }, extra as never);
+
+    expect(sendNotification).not.toHaveBeenCalled();
+    const parsed = JSON.parse((result.content[0] as { type: string; text: string }).text);
+    expect(parsed.timed_out).toBe(false);
+  });
+
+  it("ignores progress notification errors", async () => {
+    vi.useFakeTimers();
+    const client = {};
+    clientForTaskMock.mockReturnValue({ client, sessionId: "s1" });
+    deriveTaskStatusMock.mockResolvedValue({ task_id: "task-1", status: "running" });
+    const fake = createFakeMcpServer();
+    registerOpencodeWaitForTask(fake.server);
+    const handler = fake.getHandler();
+
+    const sendNotification = vi.fn().mockRejectedValue(new Error("nope"));
+    const extra = {
+      signal: new AbortController().signal,
+      _meta: { progressToken: "tok-err" },
+      sendNotification,
+    };
+
+    const promise = handler(
+      { task_ids: ["task-1"], mode: "all", timeout_ms: 1000, poll_interval_ms: 500 },
+      extra as never,
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await promise;
+
+    expect(sendNotification).toHaveBeenCalled();
+    const parsed = JSON.parse((result.content[0] as { type: string; text: string }).text);
+    expect(parsed.timed_out).toBe(true);
+  });
 });

@@ -17,6 +17,7 @@ describe("registerTools", () => {
       "opencode_get_task_status",
       "opencode_get_task_result",
       "opencode_wait_for_task",
+      "opencode_list_tasks",
       "opencode_continue_task",
       "opencode_cancel_task",
     ]);

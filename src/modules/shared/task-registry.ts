@@ -19,3 +19,11 @@ export function getTask(taskId: string): TaskRecord | undefined {
 export function removeTask(taskId: string) {
   tasks.delete(taskId);
 }
+
+export function listTasks(): TaskRecord[] {
+  return Array.from(tasks.values());
+}
+
+export function clearTasks() {
+  tasks.clear();
+}

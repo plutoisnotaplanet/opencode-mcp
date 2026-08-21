@@ -28,6 +28,7 @@ export function registerOpencodeStartServer(server: McpServer) {
       // server we did not start would take down sessions belonging to somebody else.
       if (base_url) {
         const serverId = randomUUID();
+        // v8 ignore next -- no-op close for attached server, not wired to any resource
         registerServer({ serverId, baseUrl: base_url, close: () => {} });
         return {
           content: [

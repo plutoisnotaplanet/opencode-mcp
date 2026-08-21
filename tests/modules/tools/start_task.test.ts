@@ -459,4 +459,47 @@ describe("opencode_start_task", () => {
     vi.doUnmock("@opencode-ai/sdk");
     vi.resetModules();
   });
+
+  it("passes tools and variant through to promptAsync", async () => {
+    registerServer({ serverId: "srv-1", baseUrl: "http://127.0.0.1:4096", close: vi.fn() });
+    const promptAsync = vi.fn().mockResolvedValue({});
+    vi.doMock("@opencode-ai/sdk", () => ({
+      createOpencodeClient: () => ({
+        session: {
+          create: vi.fn().mockResolvedValue({ data: { id: "session-1" } }),
+          promptAsync,
+        },
+      }),
+    }));
+    vi.resetModules();
+    const mod = await import("../../../src/modules/tools/start_task.js");
+    const registry = await import("../../../src/modules/shared/server-registry.js");
+    registry.killAllServers();
+    registry.registerServer({
+      serverId: "srv-1",
+      baseUrl: "http://127.0.0.1:4096",
+      close: vi.fn(),
+    });
+    const fake = createFakeMcpServer();
+    mod.registerOpencodeStartTask(fake.server);
+    const handler = fake.getHandler();
+
+    await handler({
+      server_id: "srv-1",
+      prompt: "hi",
+      tools: { write: false },
+      variant: "max",
+    });
+
+    expect(promptAsync).toHaveBeenCalledWith({
+      path: { id: "session-1" },
+      body: {
+        parts: [{ type: "text", text: "hi" }],
+        tools: { write: false },
+        variant: "max",
+      },
+    });
+    vi.doUnmock("@opencode-ai/sdk");
+    vi.resetModules();
+  });
 });

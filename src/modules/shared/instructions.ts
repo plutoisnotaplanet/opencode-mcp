@@ -24,15 +24,13 @@ Fast tier (near-unlimited — mechanical work, boilerplate, formatting, simple f
 
 Rule of thumb: exploration/mechanical → Fast tier; standard implementation → Mid tier; complex features and long agentic runs → High tier; architecture or hardest debugging → Frontier tier.
 
-Workflow:
+Workflow — non-blocking by default (keeps the session responsive to user messages):
 1. Ensure an OpenCode server is running. If you don't already have a server_id from a previous opencode_start_server call, call opencode_start_server first.
 2. Call opencode_list_agents with the server_id to discover the available agents (native and custom) and the exact model ids. Agents may have a pre-assigned model ("provider/model"); you can still override it per task.
-3. For each task, call opencode_start_task with the server_id and the task's prompt. Optionally pass an agent name and/or a model override copied verbatim from opencode_list_agents — never a guessed id. Collect the returned task_id for every call.
-4. Wait for completion with opencode_wait_for_task:
+3. For each task, call opencode_start_task with the server_id and the task's prompt. Optionally pass an agent name and/or a model override copied verbatim from opencode_list_agents — never a guessed id. Collect the returned task_id for every call. Tell the user the task_id immediately so they can ask for progress while it runs.
+4. Do NOT block the session with a long opencode_wait_for_task. Instead poll without blocking: use opencode_get_task_status (single task) or opencode_list_tasks (all tasks, with optional include_progress) when the user asks for progress or on next turn. This keeps the session responsive to user messages while the agent works.
+5. Only use opencode_wait_for_task when the user explicitly asks to wait, and keep the timeout short. It now respects cancellation (AbortSignal) and streams progress via notifications/progress when the client supplies a progressToken — the caller can abort to regain responsiveness without cancelling the remote task.
    - Single task: mode "all" with the single task_id.
    - Multiple tasks, incremental results: call it repeatedly with mode "any", removing completed task_ids each time.
    - Multiple tasks, all at once: call it once with mode "all" and every task_id.
-5. Once a task is reported finished, call opencode_get_task_result for that task_id to retrieve its output.
-6. Use opencode_get_task_status only for quick, non-blocking checks on a task's progress (e.g. to report status to the user) — it does not replace opencode_wait_for_task or opencode_get_task_result.
-
-Do not call opencode_get_task_result before the task has finished, and prefer opencode_wait_for_task over polling opencode_get_task_status in a loop.`;
+6. Once a task is reported finished, call opencode_get_task_result for that task_id to retrieve its output. If you lost the task_id, rediscover via opencode_list_tasks (optionally filtered by server_id).`;

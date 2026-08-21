@@ -1,4 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { getMaxToolTimeoutMs } from "../shared/config.js";
 import { jsonError, jsonResult } from "../shared/mcp-result.js";
@@ -59,7 +61,7 @@ export function registerOpencodeWaitForTask(server: McpServer) {
     "opencode_wait_for_task",
     {
       description:
-        "Long-poll one or more delegated tasks until they finish or the timeout elapses. Use mode 'all' to wait for all tasks, or 'any' to return as soon as one completes. Set include_progress to enrich still-running tasks in the final result with a partial output snippet and the currently running tool.",
+        "Long-poll one or more delegated tasks until they finish or the timeout elapses. Use mode 'all' to wait for all tasks, or 'any' to return as soon as one completes. Set include_progress to enrich still-running tasks with progress. Supports progressToken via _meta.progressToken for streaming progress and respects cancellation via AbortSignal — prefer short timeouts or get_task_status/list_tasks for non-blocking polling so the session stays responsive to user messages.",
       inputSchema: {
         task_ids: z.string().array().min(1).describe("IDs of tasks to wait for"),
         mode: z
@@ -84,7 +86,10 @@ export function registerOpencodeWaitForTask(server: McpServer) {
           ),
       },
     },
-    async ({ task_ids, mode = "all", timeout_ms, poll_interval_ms, include_progress }) => {
+    async (
+      { task_ids, mode = "all", timeout_ms, poll_interval_ms, include_progress },
+      extra: RequestHandlerExtra<ServerRequest, ServerNotification>,
+    ) => {
       // Fail-fast: check for unknown task IDs before polling starts
       const unknownIds: string[] = [];
       const taskData: Array<{
@@ -113,8 +118,27 @@ export function registerOpencodeWaitForTask(server: McpServer) {
 
       const deadline = Date.now() + timeout;
       const statusMap = new Map<string, WaitTaskResult>();
+      const progressToken = (extra?._meta as Record<string, unknown> | undefined)?.[
+        "progressToken"
+      ] as string | number | undefined;
+
+      let iteration = 0;
 
       while (true) {
+        if (extra?.signal?.aborted) {
+          const enriched = include_progress
+            ? await enrichUnfinishedWithProgress(
+                task_ids.map(
+                  (id) => statusMap.get(id) ?? { task_id: id, status: "running" as const },
+                ),
+                taskData,
+              )
+            : task_ids.map(
+                (id) => statusMap.get(id) ?? { task_id: id, status: "running" as const },
+              );
+          return jsonResult({ mode, tasks: enriched, timed_out: false, cancelled: true });
+        }
+
         // Poll all tasks that are not yet finished
         for (const { task_id, client } of taskData) {
           if (isFinished(statusMap.get(task_id))) continue;
@@ -153,7 +177,43 @@ export function registerOpencodeWaitForTask(server: McpServer) {
           return jsonResult({ mode, tasks: enriched, timed_out: true });
         }
 
-        await sleep(pollInterval);
+        if (progressToken !== undefined) {
+          try {
+            const unfinished = tasks.filter((t) => !isFinished(t));
+            // v8 ignore next -- unfinished is always >0 here (otherwise we returned above)
+            if (unfinished.length > 0) {
+              const total = task_ids.length;
+              const completed = tasks.filter(isFinished).length;
+              await extra.sendNotification({
+                method: "notifications/progress",
+                params: {
+                  progressToken,
+                  progress: completed + iteration * 0.01,
+                  total,
+                  message: `${completed}/${total} tasks completed`,
+                },
+              });
+            }
+          } catch {}
+        }
+
+        iteration++;
+
+        if (extra?.signal) {
+          await Promise.race([
+            sleep(pollInterval),
+            new Promise<void>((resolve) => {
+              // v8 ignore next 4 -- race edge: signal already aborted before listener
+              if (extra.signal.aborted) {
+                resolve();
+                return;
+              }
+              extra.signal.addEventListener("abort", () => resolve(), { once: true });
+            }),
+          ]);
+        } else {
+          await sleep(pollInterval);
+        }
       }
     },
   );

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  clearTasks,
   getTask,
+  listTasks,
   registerTask,
   removeTask,
   type TaskRecord,
@@ -31,5 +33,24 @@ describe("task-registry", () => {
     registerTask(task);
     removeTask("task-2");
     expect(getTask("task-2")).toBeUndefined();
+  });
+
+  it("lists all registered tasks", () => {
+    clearTasks();
+    const a = makeTask({ taskId: "a" });
+    const b = makeTask({ taskId: "b" });
+    registerTask(a);
+    registerTask(b);
+    expect(listTasks()).toEqual(expect.arrayContaining([a, b]));
+    clearTasks();
+    expect(listTasks()).toEqual([]);
+  });
+
+  it("clears all tasks", () => {
+    const task = makeTask({ taskId: "clear-me" });
+    registerTask(task);
+    clearTasks();
+    expect(getTask("clear-me")).toBeUndefined();
+    expect(listTasks()).toHaveLength(0);
   });
 });
