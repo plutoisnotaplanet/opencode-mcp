@@ -46,7 +46,7 @@ export async function lastAssistantEntry(
   return undefined;
 }
 
-export type TaskStatus = "pending" | "running" | "completed" | "failed";
+export type TaskStatus = "pending" | "running" | "completed" | "completed_with_errors" | "failed";
 
 export interface TaskProgress {
   /** Last ~500 chars of concatenated TextPart text from the last assistant message. */
@@ -57,6 +57,8 @@ export interface TaskProgress {
   current_tool?: string;
   /** state.status of that tool part. */
   current_tool_status?: string;
+  /** Error text from tool parts whose state.status is "error". */
+  tool_errors?: string[];
 }
 
 export interface TaskStatusResult {
@@ -64,6 +66,8 @@ export interface TaskStatusResult {
   status: TaskStatus;
   error?: string;
   progress?: TaskProgress;
+  /** Error text from tool parts that failed, when status is "completed_with_errors". */
+  tool_errors?: string[];
 }
 
 const TEXT_SNIPPET_MAX_LENGTH = 500;
@@ -73,6 +77,17 @@ const TEXT_SNIPPET_MAX_LENGTH = 500;
  * task is considered dead (e.g. the fire-and-forget prompt was rejected).
  */
 export const PENDING_STALL_MS = 15_000;
+
+/** Collect error text from tool parts that failed (state.status === "error"). */
+export function toolErrorTexts(parts: Part[]): string[] {
+  const errors: string[] = [];
+  for (const part of parts) {
+    if (part.type === "tool" && part.state?.status === "error") {
+      errors.push(part.state.error);
+    }
+  }
+  return errors;
+}
 
 /** Build a TaskProgress summary from a message's parts. */
 export function buildProgress(parts: Part[]): TaskProgress {
@@ -86,7 +101,7 @@ export function buildProgress(parts: Part[]): TaskProgress {
       text += part.text;
       continue;
     }
-    if (part.type === "tool") {
+    if (part.type === "tool" && part.state) {
       if (part.state.status === "completed") {
         toolCallsCompleted++;
       } else if (part.state.status === "running" || part.state.status === "pending") {
@@ -101,6 +116,7 @@ export function buildProgress(parts: Part[]): TaskProgress {
     tool_calls_completed: toolCallsCompleted,
     current_tool: currentTool,
     current_tool_status: currentToolStatus,
+    tool_errors: toolErrorTexts(parts),
   };
 }
 
@@ -157,6 +173,15 @@ export async function deriveTaskStatus(
     return { task_id: taskId, status: "failed", error: entry.info.error.name };
   }
   if (entry.info.time.completed) {
+    const toolErrors = toolErrorTexts(entry.parts);
+    if (toolErrors.length > 0) {
+      return {
+        task_id: taskId,
+        status: "completed_with_errors",
+        ...(includeProgress ? { progress: buildProgress(entry.parts) } : {}),
+        tool_errors: toolErrors,
+      };
+    }
     return { task_id: taskId, status: "completed" };
   }
   return {

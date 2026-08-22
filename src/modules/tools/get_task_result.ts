@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { jsonError, jsonResult } from "../shared/mcp-result.js";
-import { clientForTask, lastAssistantEntry } from "../shared/opencode-client.js";
+import { clientForTask, lastAssistantEntry, toolErrorTexts } from "../shared/opencode-client.js";
 
 export function registerOpencodeGetTaskResult(server: McpServer) {
   server.registerTool(
@@ -41,6 +41,15 @@ export function registerOpencodeGetTaskResult(server: McpServer) {
           .map((part) => part.text)
           .join("");
 
+        const toolErrors = toolErrorTexts(entry.parts);
+        if (toolErrors.length > 0) {
+          return jsonResult({
+            task_id,
+            status: "completed_with_errors",
+            result: text,
+            tool_errors: toolErrors,
+          });
+        }
         return jsonResult({ task_id, status: "completed", result: text });
       } catch (error) {
         return jsonError({

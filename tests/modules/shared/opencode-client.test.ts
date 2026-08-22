@@ -200,6 +200,71 @@ describe("deriveTaskStatus", () => {
     expect(result).toEqual({ task_id: "task-1", status: "completed" });
   });
 
+  it("returns completed_with_errors with tool errors when a tool part failed and time.completed is set", async () => {
+    const client = {
+      session: {
+        status: vi.fn().mockResolvedValue({ data: {} }),
+        messages: vi.fn().mockResolvedValue({
+          data: [
+            {
+              info: { role: "assistant", time: { completed: 123 } },
+              parts: [
+                { type: "text", text: "done" },
+                {
+                  type: "tool",
+                  tool: "bash",
+                  state: { status: "error", error: "Tool execution aborted" },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    };
+    const result = await deriveTaskStatus(client as never, "s1", "task-1");
+    expect(result).toEqual({
+      task_id: "task-1",
+      status: "completed_with_errors",
+      tool_errors: ["Tool execution aborted"],
+    });
+  });
+
+  it("includes progress on the completed_with_errors path when includeProgress is true", async () => {
+    const client = {
+      session: {
+        status: vi.fn().mockResolvedValue({ data: {} }),
+        messages: vi.fn().mockResolvedValue({
+          data: [
+            {
+              info: { role: "assistant", time: { completed: 123 } },
+              parts: [
+                { type: "text", text: "done" },
+                {
+                  type: "tool",
+                  tool: "bash",
+                  state: { status: "error", error: "Tool execution aborted" },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    };
+    const result = await deriveTaskStatus(client as never, "s1", "task-1", {
+      includeProgress: true,
+    });
+    expect(result).toEqual({
+      task_id: "task-1",
+      status: "completed_with_errors",
+      progress: {
+        text_snippet: "done",
+        tool_calls_completed: 0,
+        tool_errors: ["Tool execution aborted"],
+      },
+      tool_errors: ["Tool execution aborted"],
+    });
+  });
+
   it("returns running when the assistant entry has no completed time and no error", async () => {
     const client = {
       session: {
@@ -243,7 +308,7 @@ describe("deriveTaskStatus", () => {
     expect(result).toEqual({
       task_id: "task-1",
       status: "running",
-      progress: { text_snippet: "hello", tool_calls_completed: 0 },
+      progress: { text_snippet: "hello", tool_calls_completed: 0, tool_errors: [] },
     });
   });
 
@@ -280,7 +345,7 @@ describe("deriveTaskStatus", () => {
     expect(result).toEqual({
       task_id: "task-1",
       status: "running",
-      progress: { text_snippet: "still working", tool_calls_completed: 0 },
+      progress: { text_snippet: "still working", tool_calls_completed: 0, tool_errors: [] },
     });
   });
 });
@@ -311,22 +376,30 @@ describe("buildProgress", () => {
     expect(progress.current_tool_status).toBe("running");
   });
 
-  it("ignores error tool parts and leaves current_tool undefined when nothing is running/pending", () => {
-    const parts = [{ type: "tool", tool: "bash", state: { status: "error" } }];
+  it("surfaces error tool parts in tool_errors and leaves current_tool undefined when nothing is running/pending", () => {
+    const parts = [{ type: "tool", tool: "bash", state: { status: "error", error: "boom" } }];
     const progress = buildProgress(parts as never);
     expect(progress.tool_calls_completed).toBe(0);
     expect(progress.current_tool).toBeUndefined();
     expect(progress.current_tool_status).toBeUndefined();
+    expect(progress.tool_errors).toEqual(["boom"]);
   });
 
   it("ignores part types that are neither text nor tool", () => {
     const parts = [{ type: "step-start" }];
     const progress = buildProgress(parts as never);
-    expect(progress).toEqual({ text_snippet: "", tool_calls_completed: 0 });
+    expect(progress).toEqual({ text_snippet: "", tool_calls_completed: 0, tool_errors: [] });
   });
 
   it("returns an empty snippet when there are no parts", () => {
     const progress = buildProgress([]);
-    expect(progress).toEqual({ text_snippet: "", tool_calls_completed: 0 });
+    expect(progress).toEqual({ text_snippet: "", tool_calls_completed: 0, tool_errors: [] });
+  });
+
+  it("ignores tool parts that have no state and never reads state.error", () => {
+    const parts = [{ type: "tool", text: "ignored" }];
+    const progress = buildProgress(parts as never);
+    expect(progress.tool_calls_completed).toBe(0);
+    expect(progress.tool_errors).toEqual([]);
   });
 });

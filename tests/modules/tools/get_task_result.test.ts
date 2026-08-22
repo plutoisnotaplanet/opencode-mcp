@@ -3,10 +3,12 @@ import { createFakeMcpServer } from "../../../src/test-utils/fake-mcp-server.js"
 
 const clientForTaskMock = vi.fn();
 const lastAssistantEntryMock = vi.fn();
+const toolErrorTextsMock = vi.fn();
 
 vi.mock("../../../src/modules/shared/opencode-client.js", () => ({
   clientForTask: (...args: unknown[]) => clientForTaskMock(...args),
   lastAssistantEntry: (...args: unknown[]) => lastAssistantEntryMock(...args),
+  toolErrorTexts: (...args: unknown[]) => toolErrorTextsMock(...args),
 }));
 
 const { registerOpencodeGetTaskResult } = await import(
@@ -17,6 +19,8 @@ describe("opencode_get_task_result", () => {
   beforeEach(() => {
     clientForTaskMock.mockReset();
     lastAssistantEntryMock.mockReset();
+    toolErrorTextsMock.mockReset();
+    toolErrorTextsMock.mockReturnValue([]);
   });
 
   it("returns not_found when the task cannot be resolved", async () => {
@@ -121,6 +125,37 @@ describe("opencode_get_task_result", () => {
         {
           type: "text",
           text: JSON.stringify({ task_id: "task-1", status: "completed", result: "Hello, world!" }),
+        },
+      ],
+    });
+  });
+
+  it("returns completed_with_errors with tool errors when a tool part failed", async () => {
+    clientForTaskMock.mockReturnValue({ client: {}, sessionId: "s1" });
+    lastAssistantEntryMock.mockResolvedValue({
+      info: { time: { completed: 123 } },
+      parts: [
+        { type: "text", text: "Hello, world!" },
+        { type: "tool", tool: "bash", state: { status: "error", error: "Tool execution aborted" } },
+      ],
+    });
+    toolErrorTextsMock.mockReturnValue(["Tool execution aborted"]);
+    const fake = createFakeMcpServer();
+    registerOpencodeGetTaskResult(fake.server);
+    const handler = fake.getHandler();
+
+    const result = await handler({ task_id: "task-1" });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            task_id: "task-1",
+            status: "completed_with_errors",
+            result: "Hello, world!",
+            tool_errors: ["Tool execution aborted"],
+          }),
         },
       ],
     });

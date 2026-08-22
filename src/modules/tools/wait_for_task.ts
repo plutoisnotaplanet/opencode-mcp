@@ -17,7 +17,7 @@ const MIN_POLL_INTERVAL_MS = 500;
 /** A task result as tracked by the wait loop; adds the "error" status for per-task SDK failures. */
 type WaitTaskResult = TaskStatusResult | { task_id: string; status: "error"; error: string };
 
-const FINISHED_STATUSES = new Set(["completed", "failed", "error"]);
+const FINISHED_STATUSES = new Set(["completed", "completed_with_errors", "failed", "error"]);
 
 function isFinished(result: WaitTaskResult | undefined): boolean {
   return result !== undefined && FINISHED_STATUSES.has(result.status);
