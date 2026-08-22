@@ -34,4 +34,5 @@ Workflow — non-blocking by default (keeps the session responsive to user messa
    - Single task: mode "all" with the single task_id.
    - Multiple tasks, incremental results: call it repeatedly with mode "any", removing completed task_ids each time.
    - Multiple tasks, all at once: call it once with mode "all" and every task_id.
-7. Once a task is reported finished, call opencode_get_task_result for that task_id to retrieve its output. If you lost the task_id, rediscover via opencode_list_tasks (optionally filtered by server_id).`;
+7. Once a task is reported finished, call opencode_get_task_result for that task_id to retrieve its output. If you lost the task_id, rediscover via opencode_list_tasks (optionally filtered by server_id).
+8. If a task reports status "completed_with_errors" (tool call failed inside the executor, e.g. ctx_execute aborted / service_overloaded), do NOT treat it as success — report the tool_errors to the user and offer to retry the task on a different model.`;
